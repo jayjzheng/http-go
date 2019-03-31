@@ -15,12 +15,12 @@ func (m *Mock) Do(req *http.Request) (*http.Response, error) {
 	return m.Fn(req)
 }
 
-func NewMock(status int, rc io.ReadCloser, err error) *Mock {
+func NewMock(status int, body io.ReadCloser, err error) *Mock {
 	return &Mock{
 		Fn: func(_ *http.Request) (*http.Response, error) {
 			return &http.Response{
-				Body:       rc,
-				StatusCode: http.StatusOK,
+				Body:       body,
+				StatusCode: status,
 			}, err
 		},
 	}
