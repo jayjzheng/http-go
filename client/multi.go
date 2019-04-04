@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 )
 
-type Simple struct {
+type Multi struct {
 	Client interface {
 		Get(string) (*http.Response, error)
 	}
@@ -21,13 +21,13 @@ type validator func(*http.Response) error
 //
 // Optionally, it accepts an array of validators.
 // If one of responses fails to valiate, the rest of the responses and the error will be returned.
-func (s *Simple) Get(urls []string, vv ...validator) ([]*http.Response, error) {
+func (m *Multi) Get(urls []string, vv ...validator) ([]*http.Response, error) {
 	type out struct {
 		resp *http.Response
 		err  error
 	}
 
-	limit := s.ConcurrencyLimit
+	limit := m.ConcurrencyLimit
 	if limit == 0 {
 		limit = len(urls)
 	}
@@ -36,7 +36,7 @@ func (s *Simple) Get(urls []string, vv ...validator) ([]*http.Response, error) {
 
 	for _, u := range urls {
 		go func(u string) {
-			resp, err := s.Client.Get(u)
+			resp, err := m.Client.Get(u)
 			ch <- out{resp: resp, err: err}
 		}(u)
 	}
