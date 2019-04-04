@@ -3,8 +3,6 @@ package client
 import (
 	"fmt"
 	"net/http"
-
-	"github.com/hashicorp/go-multierror"
 )
 
 type Multi struct {
@@ -16,51 +14,38 @@ type Multi struct {
 
 type validator func(*http.Response) error
 
-// Get attempts gets the http.Response from urls.
-// If one of the urls returns an error, the rest of the response and the error will be returned.
-//
-// Optionally, it accepts an array of validators.
-// If one of responses fails to valiate, the rest of the responses and the error will be returned.
-func (m *Multi) Get(urls []string, vv ...validator) ([]*http.Response, error) {
-	type out struct {
-		resp *http.Response
-		err  error
-	}
+type Response struct {
+	*http.Response
+	Err error
+}
 
+// Get attempts to fetch from urls, and returns a <-chan of Response.
+func (m *Multi) Get(urls []string, vv ...validator) <-chan Response {
 	limit := m.ConcurrencyLimit
 	if limit == 0 {
 		limit = len(urls)
 	}
 
-	ch := make(chan out, limit)
+	ch := make(chan Response, limit)
 
 	for _, u := range urls {
 		go func(u string) {
 			resp, err := m.Client.Get(u)
-			ch <- out{resp: resp, err: err}
+			if err != nil {
+				ch <- Response{Err: err}
+				return
+			}
+			for _, validate := range vv {
+				if err := validate(resp); err != nil {
+					ch <- Response{Err: err}
+					return
+				}
+			}
+			ch <- Response{Response: resp}
 		}(u)
 	}
 
-	var (
-		rr   []*http.Response
-		errs *multierror.Error
-	)
-	for i := 0; i < len(urls); i++ {
-		o := <-ch
-		if o.err != nil {
-			errs = multierror.Append(errs, o.err)
-			continue
-		}
-		for _, validate := range vv {
-			if err := validate(o.resp); err != nil {
-				errs = multierror.Append(errs, err)
-				continue
-			}
-		}
-		rr = append(rr, o.resp)
-	}
-
-	return rr, errs.ErrorOrNil()
+	return ch
 }
 
 func ValidateStatusOK(resp *http.Response) error {
