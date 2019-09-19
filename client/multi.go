@@ -11,22 +11,22 @@ import (
 
 type Multi struct {
 	Client interface {
-		Get(string) (*http.Response, error)
+		Do(*http.Request) (*http.Response, error)
 	}
 	ConcurrencyLimit int
 }
 
 type validator func(*http.Response) error
 
-// Get attempts to fetch from urls, and returns a <-chan of *Response.
+// Do attempts to make the http requests and returns a <-chan of *Response.
 // Optionally, it accepts a list of validators for *http.Response.
-func (m *Multi) Get(ctx context.Context, urls []string, vv ...validator) <-chan *Response {
-	in := m.generate(urls)
-	limit := m.limit(len(urls))
+func (m *Multi) Do(ctx context.Context, rr []*http.Request, vv ...validator) <-chan *Response {
+	in := m.generate(rr)
+	limit := m.limit(len(rr))
 
 	cs := make([]<-chan *Response, limit)
 	for i := 0; i < limit; i++ {
-		cs[i] = m.get(ctx, in, vv)
+		cs[i] = m.do(ctx, in, vv)
 	}
 
 	return m.merge(ctx, cs...)
@@ -58,30 +58,30 @@ func (m *Multi) Handle(ctx context.Context, resp <-chan *Response, fn handler) e
 	return errs.ErrorOrNil()
 }
 
-func (m *Multi) generate(urls []string) <-chan string {
-	out := make(chan string)
+func (m *Multi) generate(rr []*http.Request) <-chan *http.Request {
+	out := make(chan *http.Request)
 
 	go func() {
 		defer close(out)
-		for _, u := range urls {
-			out <- u
+		for _, req := range rr {
+			out <- req
 		}
 	}()
 
 	return out
 }
 
-func (m *Multi) get(ctx context.Context, urls <-chan string, vv []validator) <-chan *Response {
+func (m *Multi) do(ctx context.Context, rr <-chan *http.Request, vv []validator) <-chan *Response {
 	out := make(chan *Response)
 	go func() {
 		defer close(out)
-		for u := range urls {
+		for req := range rr {
 			select {
 			case <-ctx.Done():
 				return
 			default:
 			}
-			resp, err := m.Client.Get(u)
+			resp, err := m.Client.Do(req)
 			if err != nil {
 				out <- &Response{Err: err}
 				continue
